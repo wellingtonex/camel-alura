@@ -15,6 +15,9 @@ public class RotaPedidos {
 			public void configure() throws Exception {
 
 				from("file:pedidos?delay=5s&noop=true").
+					split().xpath("/pedido/itens/item").
+					log("${body}").
+					filter().xpath("/item/formato[text()='EBOOK']").
 					log("${id}").
 					marshal().xmljson().
 					log("${body}").
