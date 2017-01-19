@@ -1,5 +1,6 @@
 package br.com.caelum.camel;
 
+import org.apache.activemq.camel.component.ActiveMQComponent;
 import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
@@ -12,35 +13,40 @@ public class RotaPedidos {
 	public static void main(String[] args) throws Exception {
 
 		CamelContext context = new DefaultCamelContext();
+		context.addComponent("activemq", ActiveMQComponent.activeMQComponent("tcp://localhost:61616"));
+		
 		context.addRoutes(new RouteBuilder() {
 
 			@Override
 			public void configure() throws Exception {
 				
-				errorHandler(deadLetterChannel("file:erro")
-						.logExhaustedMessageHistory(true).maximumRedeliveries(3)
-						.redeliveryDelay(2000).onRedelivery(new Processor() {
+				errorHandler(
+					    deadLetterChannel("activemq:queue:pedidos.DLQ"). //usando DLQ
+					        logExhaustedMessageHistory(true).
+					        maximumRedeliveries(3).
+					            redeliveryDelay(5000).
+					        onRedelivery(new Processor() {
 
-							public void process(Exchange exchange)
-									throws Exception {
-								int counter = (int) exchange.getIn()
-										.getHeader(Exchange.REDELIVERY_COUNTER);
-								int max = (int) exchange.getIn().getHeader(
-										Exchange.REDELIVERY_MAX_COUNTER);
-								System.out.println(
-										"Redelivery - " + counter + "/" + max);
-							}
-						}));
+					                @Override
+					                public void process(Exchange exchange) throws Exception {
+					                    int counter = (int) exchange.getIn().getHeader(Exchange.REDELIVERY_COUNTER);
+					                    int max = (int) exchange.getIn().getHeader(Exchange.REDELIVERY_MAX_COUNTER);
+					                    System.out.println("Redelivery - " + counter + "/" + max );
+					                }
+					        })
+					);
 				
 
-				from("file:pedidos?delay=5s&noop=true")
+				from("activemq:queue:pedidos")
+					.log("${file:name}")
 					.routeId("rota-pedidos")
-					.to("validator:pedido.xsd");//nova validação
-//					.multicast()
-//					//.parallelProcessing() para definir que cada rota sera executada em uma thread diferente
-//					//timeout(500). //millis podemos ate definir um time out
-//					.to("direct:http")
-//					.to("direct:soap");
+					.delay(1000)
+					.to("validator:pedido.xsd")
+					.log("chegamos aqui")
+					.multicast()
+					.to("direct:soap")
+					.log("Chamando soap com ${body}")
+					.to("direct:http");
 
 				from("direct:http")
 					.routeId("rota-http")
